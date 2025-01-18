@@ -12,8 +12,16 @@ export default {
     const url = new URL(request.url);
     if (url.pathname == "/tg") {
       await sendMessage();
-    } else if (url.pathname == `/${pass}`) {
-      await checkin();
+    } else {
+      // 这里判断路径是否为某个账号的签到路径
+      const match = url.pathname.match(/^\/(.*)$/);
+      if (match) {
+        const targetPass = match[1];
+        const index = passList.indexOf(targetPass);
+        if (index !== -1) {
+          await checkin(index); // 根据索引执行特定账号的签到
+        }
+      }
     }
     return new Response(签到结果, {
       status: 200,
@@ -26,7 +34,7 @@ export default {
     console.log('Cron job started');
     try {
       await initializeVariables(env);
-      await checkin();
+      await checkin(); // 默认执行所有账号的签到
       console.log('Cron job completed successfully');
     } catch (error) {
       console.error('Cron job failed:', error);
@@ -80,13 +88,16 @@ async function sendMessage(msg = "") {
   }
 }
 
-async function checkin() {
+async function checkin(index = null) {
   try {
     if (domainList.length === 0 || userList.length === 0 || passList.length === 0) {
       throw new Error('必需的配置参数缺失');
     }
 
-    for (let i = 0; i < domainList.length; i++) {
+    const start = index === null ? 0 : index;  // 如果没有传入index，就处理所有账号；否则处理指定账号
+    const end = index === null ? domainList.length : start + 1;
+
+    for (let i = start; i < end; i++) {
       const domain = domainList[i];
       const user = userList[i];
       const pass = passList[i];
