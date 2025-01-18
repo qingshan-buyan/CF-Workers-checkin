@@ -1,7 +1,7 @@
-let domain = "这里填机场域名";  // 默认域名
-let user = "这里填邮箱";  // 默认邮箱
-let pass = "这里填密码";  // 默认密码
-let 签到结果;
+let domainList = [];
+let userList = [];
+let passList = [];
+let 签到结果 = "";
 let BotToken = '';
 let ChatID = '';
 
@@ -37,33 +37,38 @@ export default {
 };
 
 async function initializeVariables(env) {
-  domain = env.JC || env.DOMAIN || domain;
-  user = env.ZH || env.USER || user;
-  pass = env.MM || env.PASS || pass;
-  if (!domain.includes("//")) domain = `https://${domain}`;
+  // 读取并解析环境变量中的多个账号、密码和域名
+  domainList = (env.JC || "").split(",").map(item => item.trim());
+  userList = (env.ZH || "").split(",").map(item => item.trim());
+  passList = (env.MM || "").split(",").map(item => item.trim());
+
+  if (domainList.length !== userList.length || domainList.length !== passList.length) {
+    签到结果 = "域名、账号和密码的数量不一致，请检查配置。";
+    console.error(签到结果);
+    return;
+  }
+
+  // 初始化 BotToken 和 ChatID（可选）
   BotToken = env.TGTOKEN || BotToken;
   ChatID = env.TGID || ChatID;
 
-  // 解析批量账号信息
-  const accounts = (env.ACCOUNTS || "").split(",");
-  if (accounts.length > 0) {
-    签到结果 = "账户信息: \n";
-    accounts.forEach((account, index) => {
-      const [accountDomain, accountUser, accountPass] = account.split(":");
-      签到结果 += `\n账号 ${index + 1}: ${accountDomain} - ${accountUser}`;
-    });
-  } else {
-    签到结果 = "没有配置任何账号。";
-  }
+  // 打印调试信息
+  签到结果 = `配置的账户信息:\n`;
+  domainList.forEach((domain, index) => {
+    签到结果 += `账号 ${index + 1}: ${domain} - ${userList[index]}\n`;
+  });
+  console.log("已加载的账户信息:", 签到结果);
 }
 
 async function sendMessage(msg = "") {
+  const 账号信息 = `账户信息: \n${domainList.map((domain, index) => `地址: ${domain}\n账号: ${userList[index]}\n密码: <tg-spoiler>${passList[index]}</tg-spoiler>`).join("\n\n")}`;
   const now = new Date();
   const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   const formattedTime = beijingTime.toISOString().slice(0, 19).replace('T', ' ');
+
   console.log(msg);
   if (BotToken !== '' && ChatID !== '') {
-    const url = `https://api.telegram.org/bot${BotToken}/sendMessage?chat_id=${ChatID}&parse_mode=HTML&text=${encodeURIComponent("执行时间: " + formattedTime + "\n" + msg)}`;
+    const url = `https://api.telegram.org/bot${BotToken}/sendMessage?chat_id=${ChatID}&parse_mode=HTML&text=${encodeURIComponent("执行时间: " + formattedTime + "\n" + 账号信息 + "\n\n" + msg)}`;
     return fetch(url, {
       method: 'get',
       headers: {
@@ -76,102 +81,103 @@ async function sendMessage(msg = "") {
 }
 
 async function checkin() {
-  const accounts = (process.env.ACCOUNTS || "").split(",");
-  if (accounts.length === 0) {
-    签到结果 = "没有配置任何账号。";
-    await sendMessage(签到结果);
-    return 签到结果;
-  }
+  try {
+    if (domainList.length === 0 || userList.length === 0 || passList.length === 0) {
+      throw new Error('必需的配置参数缺失');
+    }
 
-  for (let i = 0; i < accounts.length; i++) {
-    const [accountDomain, accountUser, accountPass] = accounts[i].split(":");
-    try {
-      签到结果 = `正在处理账号 ${i + 1}:\n地址: ${accountDomain}\n账号: ${accountUser}`;
+    for (let i = 0; i < domainList.length; i++) {
+      const domain = domainList[i];
+      const user = userList[i];
+      const pass = passList[i];
 
       // 登录请求
-      const loginResponse = await fetch(`${accountDomain}/auth/login`, {
+      const loginResponse = await fetch(`${domain}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
           'Accept': 'application/json, text/plain, */*',
-          'Origin': accountDomain,
-          'Referer': `${accountDomain}/auth/login`,
+          'Origin': domain,
+          'Referer': `${domain}/auth/login`,
         },
         body: JSON.stringify({
-          email: accountUser,
-          passwd: accountPass,
+          email: user,
+          passwd: pass,
           remember_me: 'on',
           code: "",
         }),
       });
 
-      console.log('Login Response Status:', loginResponse.status);
+      console.log(`账号 ${i + 1} - 登录请求状态:`, loginResponse.status);
 
       if (!loginResponse.ok) {
         const errorText = await loginResponse.text();
-        throw new Error(`登录请求失败: ${errorText}`);
+        throw new Error(`账号 ${i + 1} 登录请求失败: ${errorText}`);
       }
 
       const loginJson = await loginResponse.json();
-      console.log('Login Response:', loginJson);
+      console.log(`账号 ${i + 1} - 登录响应:`, loginJson);
 
       if (loginJson.ret !== 1) {
-        throw new Error(`登录失败: ${loginJson.msg || '未知错误'}`);
+        throw new Error(`账号 ${i + 1} 登录失败: ${loginJson.msg || '未知错误'}`);
       }
 
       // 获取 Cookie
       const cookieHeader = loginResponse.headers.get('set-cookie');
       if (!cookieHeader) {
-        throw new Error('登录成功但未收到Cookie');
+        throw new Error(`账号 ${i + 1} 登录成功但未收到Cookie`);
       }
 
-      console.log('Received cookies:', cookieHeader);
+      console.log(`账号 ${i + 1} - 收到Cookie:`, cookieHeader);
       const cookies = cookieHeader.split(',').map(cookie => cookie.split(';')[0]).join('; ');
 
       // 等待确保登录状态
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // 签到请求
-      const checkinResponse = await fetch(`${accountDomain}/user/checkin`, {
+      const checkinResponse = await fetch(`${domain}/user/checkin`, {
         method: 'POST',
         headers: {
           'Cookie': cookies,
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
           'Accept': 'application/json, text/plain, */*',
           'Content-Type': 'application/json',
-          'Origin': accountDomain,
-          'Referer': `${accountDomain}/user/panel`,
+          'Origin': domain,
+          'Referer': `${domain}/user/panel`,
           'X-Requested-With': 'XMLHttpRequest'
         },
       });
 
-      console.log('Checkin Response Status:', checkinResponse.status);
+      console.log(`账号 ${i + 1} - 签到请求状态:`, checkinResponse.status);
 
       const responseText = await checkinResponse.text();
-      console.log('Checkin Raw Response:', responseText);
+      console.log(`账号 ${i + 1} - 签到响应:`, responseText);
 
       try {
         const checkinResult = JSON.parse(responseText);
-        console.log('Checkin Result:', checkinResult);
+        console.log(`账号 ${i + 1} - 签到结果:`, checkinResult);
 
         if (checkinResult.ret === 1 || checkinResult.ret === 0) {
-          签到结果 = `🎉 账号 ${i + 1} 签到结果 🎉\n ${checkinResult.msg || (checkinResult.ret === 1 ? '签到成功' : '签到失败')}`;
+          签到结果 += `🎉 账号 ${i + 1} 签到结果 🎉\n ${checkinResult.msg || (checkinResult.ret === 1 ? '签到成功' : '签到失败')}\n`;
         } else {
-          签到结果 = `🎉 账号 ${i + 1} 签到结果 🎉\n ${checkinResult.msg || '签到结果未知'}`;
+          签到结果 += `🎉 账号 ${i + 1} 签到结果 🎉\n ${checkinResult.msg || '签到结果未知'}\n`;
         }
       } catch (e) {
         if (responseText.includes('登录')) {
-          throw new Error('登录状态无效，请检查Cookie处理');
+          throw new Error(`账号 ${i + 1} 登录状态无效，请检查Cookie处理`);
         }
-        throw new Error(`解析签到响应失败: ${e.message}\n\n原始响应: ${responseText}`);
+        throw new Error(`账号 ${i + 1} 解析签到响应失败: ${e.message}\n\n原始响应: ${responseText}`);
       }
-
-      await sendMessage(签到结果);
-    } catch (error) {
-      console.error(`Checkin Error for account ${i + 1}:`, error);
-      签到结果 = `账号 ${i + 1} 签到过程发生错误: ${error.message}`;
-      await sendMessage(签到结果);
     }
+
+    await sendMessage(签到结果);
+    return 签到结果;
+
+  } catch (error) {
+    console.error('Checkin Error:', error);
+    签到结果 = `签到过程发生错误: ${error.message}`;
+    await sendMessage(签到结果);
+    return 签到结果;
   }
 }
