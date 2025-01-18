@@ -1,27 +1,19 @@
-let domainList = [];
-let userList = [];
-let passList = [];
-let 签到结果 = "";
+let domainList = [];  // 存储多个域名
+let userList = [];    // 存储多个账号
+let passList = [];    // 存储多个密码
+let 签到结果 = '';    // 存储签到结果
 let BotToken = '';
 let ChatID = '';
 
 export default {
-  // HTTP 请求处理函数保持不变
+  // HTTP 请求处理函数
   async fetch(request, env, ctx) {
     await initializeVariables(env);
     const url = new URL(request.url);
-    if (url.pathname == "/tg") {
+    if(url.pathname == "/tg") {
       await sendMessage();
     } else {
-      // 这里判断路径是否为某个账号的签到路径
-      const match = url.pathname.match(/^\/(.*)$/);
-      if (match) {
-        const targetPass = match[1];
-        const index = passList.indexOf(targetPass);
-        if (index !== -1) {
-          await checkin(index); // 根据索引执行特定账号的签到
-        }
-      }
+      await checkin(); // 默认处理签到
     }
     return new Response(签到结果, {
       status: 200,
@@ -34,7 +26,7 @@ export default {
     console.log('Cron job started');
     try {
       await initializeVariables(env);
-      await checkin(); // 默认执行所有账号的签到
+      await checkin();
       console.log('Cron job completed successfully');
     } catch (error) {
       console.error('Cron job failed:', error);
@@ -45,38 +37,30 @@ export default {
 };
 
 async function initializeVariables(env) {
-  // 读取并解析环境变量中的多个账号、密码和域名
-  domainList = (env.JC || "").split(",").map(item => item.trim());
-  userList = (env.ZH || "").split(",").map(item => item.trim());
-  passList = (env.MM || "").split(",").map(item => item.trim());
-
-  if (domainList.length !== userList.length || domainList.length !== passList.length) {
-    签到结果 = "域名、账号和密码的数量不一致，请检查配置。";
-    console.error(签到结果);
-    return;
-  }
-
-  // 初始化 BotToken 和 ChatID（可选）
+  // 从环境变量中获取账号、密码和域名信息
+  domainList = (env.JC || "").split(",");
+  userList = (env.ZH || "").split(",");
+  passList = (env.MM || "").split(",");
   BotToken = env.TGTOKEN || BotToken;
   ChatID = env.TGID || ChatID;
 
-  // 打印调试信息
-  签到结果 = `配置的账户信息:\n`;
-  domainList.forEach((domain, index) => {
-    签到结果 += `账号 ${index + 1}: ${domain} - ${userList[index]}\n`;
-  });
-  console.log("已加载的账户信息:", 签到结果);
+  if(domainList.length === 0 || userList.length === 0 || passList.length === 0) {
+    throw new Error('JC、ZH、MM 环境变量配置错误');
+  }
+
+  // 显示部分账户信息
+  签到结果 = `账户信息: \n${domainList.map((domain, index) => `地址: ${domain}\n账号: ${userList[index]}\n密码: <tg-spoiler>${passList[index]}</tg-spoiler>`).join("\n\n")}`;
 }
 
 async function sendMessage(msg = "") {
-  const 账号信息 = `账户信息: \n${domainList.map((domain, index) => `地址: ${domain}\n账号: ${userList[index]}\n密码: <tg-spoiler>${passList[index]}</tg-spoiler>`).join("\n\n")}`;
   const now = new Date();
   const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   const formattedTime = beijingTime.toISOString().slice(0, 19).replace('T', ' ');
 
-  console.log(msg);
+  // 如果配置了 Telegram 推送
   if (BotToken !== '' && ChatID !== '') {
-    const url = `https://api.telegram.org/bot${BotToken}/sendMessage?chat_id=${ChatID}&parse_mode=HTML&text=${encodeURIComponent("执行时间: " + formattedTime + "\n" + 账号信息 + "\n\n" + msg)}`;
+    const url = `https://api.telegram.org/bot${BotToken}/sendMessage?chat_id=${ChatID}&parse_mode=HTML&text=${encodeURIComponent("执行时间: " + formattedTime + "\n" + 签到结果 + "\n\n" + msg)}`;
+    
     return fetch(url, {
       method: 'get',
       headers: {
@@ -96,6 +80,8 @@ async function checkin(index = null) {
 
     const start = index === null ? 0 : index;  // 如果没有传入index，就处理所有账号；否则处理指定账号
     const end = index === null ? domainList.length : start + 1;
+
+    let 签到信息 = ""; // 用于存储每个账号的签到结果
 
     for (let i = start; i < end; i++) {
       const domain = domainList[i];
@@ -170,25 +156,25 @@ async function checkin(index = null) {
         console.log(`账号 ${i + 1} - 签到结果:`, checkinResult);
 
         if (checkinResult.ret === 1 || checkinResult.ret === 0) {
-          签到结果 += `🎉 账号 ${i + 1} 签到结果 🎉\n ${checkinResult.msg || (checkinResult.ret === 1 ? '签到成功' : '签到失败')}\n`;
+          签到信息 += `🎉 账号 ${i + 1} 签到结果 🎉\n ${checkinResult.msg || (checkinResult.ret === 1 ? '签到成功' : '签到失败')}\n`;
         } else {
-          签到结果 += `🎉 账号 ${i + 1} 签到结果 🎉\n ${checkinResult.msg || '签到结果未知'}\n`;
+          签到信息 += `🎉 账号 ${i + 1} 签到结果 🎉\n ${checkinResult.msg || '签到结果未知'}\n`;
         }
       } catch (e) {
-        if (responseText.includes('登录')) {
-          throw new Error(`账号 ${i + 1} 登录状态无效，请检查Cookie处理`);
-        }
-        throw new Error(`账号 ${i + 1} 解析签到响应失败: ${e.message}\n\n原始响应: ${responseText}`);
+        console.error(`账号 ${i + 1} - 解析签到响应失败:`, e);
+        签到信息 += `账号 ${i + 1} 签到解析失败: ${e.message}\n`;
       }
     }
 
-    await sendMessage(签到结果);
-    return 签到结果;
+    // 发送签到结果信息（包括账户信息和签到结果）
+    await sendMessage(签到信息);
+
+    return 签到信息;
 
   } catch (error) {
     console.error('Checkin Error:', error);
-    签到结果 = `签到过程发生错误: ${error.message}`;
-    await sendMessage(签到结果);
-    return 签到结果;
+    签到信息 = `签到过程发生错误: ${error.message}`;
+    await sendMessage(签到信息);
+    return 签到信息;
   }
 }
