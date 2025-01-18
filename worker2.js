@@ -1,7 +1,7 @@
 let domainList = [];  // 存储多个域名
 let userList = [];    // 存储多个账号
 let passList = [];    // 存储多个密码
-let 签到结果 = '';    // 存储签到结果
+let 签到信息 = '';    // 存储签到信息（包括错误信息）
 let BotToken = '';
 let ChatID = '';
 
@@ -15,7 +15,7 @@ export default {
     } else {
       await checkin(); // 默认处理签到
     }
-    return new Response(签到结果, {
+    return new Response(签到信息, {
       status: 200,
       headers: { 'Content-Type': 'text/plain;charset=UTF-8' }
     });
@@ -30,8 +30,8 @@ export default {
       console.log('Cron job completed successfully');
     } catch (error) {
       console.error('Cron job failed:', error);
-      签到结果 = `定时任务执行失败: ${error.message}`;
-      await sendMessage(签到结果);
+      签到信息 = `定时任务执行失败: ${error.message}`;
+      await sendMessage(签到信息);
     }
   },
 };
@@ -49,7 +49,7 @@ async function initializeVariables(env) {
   }
 
   // 显示部分账户信息
-  签到结果 = `账户信息: \n${domainList.map((domain, index) => `地址: ${domain}\n账号: ${userList[index]}\n密码: <tg-spoiler>${passList[index]}</tg-spoiler>`).join("\n\n")}`;
+  签到信息 = `账户信息: \n${domainList.map((domain, index) => `地址: ${domain}\n账号: ${userList[index]}\n密码: <tg-spoiler>${passList[index]}</tg-spoiler>`).join("\n\n")}`;
 }
 
 async function sendMessage(msg = "") {
@@ -59,7 +59,7 @@ async function sendMessage(msg = "") {
 
   // 如果配置了 Telegram 推送
   if (BotToken !== '' && ChatID !== '') {
-    const url = `https://api.telegram.org/bot${BotToken}/sendMessage?chat_id=${ChatID}&parse_mode=HTML&text=${encodeURIComponent("执行时间: " + formattedTime + "\n" + 签到结果 + "\n\n" + msg)}`;
+    const url = `https://api.telegram.org/bot${BotToken}/sendMessage?chat_id=${ChatID}&parse_mode=HTML&text=${encodeURIComponent("执行时间: " + formattedTime + "\n" + 签到信息 + "\n\n" + msg)}`;
     
     return fetch(url, {
       method: 'get',
@@ -81,7 +81,7 @@ async function checkin(index = null) {
     const start = index === null ? 0 : index;  // 如果没有传入index，就处理所有账号；否则处理指定账号
     const end = index === null ? domainList.length : start + 1;
 
-    let 签到信息 = ""; // 用于存储每个账号的签到结果
+    签到信息 = "";  // 在每次开始签到时清空签到信息
 
     for (let i = start; i < end; i++) {
       const domain = domainList[i];
